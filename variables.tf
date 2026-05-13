@@ -31,6 +31,16 @@ variable "vm_memory" {
   default = 2
 }
 
+variable "disk_size" {
+  type    = number
+  default = 10
+}
+
+variable "server_count" {
+  type    = number
+  default = 2
+}
+
 variable "ssh_public_key" {
   type = string
 }
