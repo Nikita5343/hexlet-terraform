@@ -6,4 +6,6 @@ secrets.auto.tfvars
 *.tfstate
 *.tfstate.*
 
+*.tfvars
+
 *.backup

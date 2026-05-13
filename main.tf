@@ -1,37 +1,35 @@
 terraform {
+  required_version = ">= 0.13"
+
   required_providers {
     yandex = {
       source = "yandex-cloud/yandex"
     }
   }
-
-  required_version = ">= 0.13"
 }
 
-variable "yc_token" {}
-
 provider "yandex" {
-  zone  = "ru-central1-a"
   token = var.yc_token
+  zone  = var.zone
 }
 
 resource "yandex_vpc_network" "default" {
-  folder_id = "b1g4ufr8q7ch7evt7lra"
+  folder_id = var.folder_id
 }
 
 resource "yandex_vpc_subnet" "default" {
-  zone           = "ru-central1-a"
+  zone           = var.zone
   network_id     = yandex_vpc_network.default.id
   v4_cidr_blocks = ["10.5.0.0/24"]
-  folder_id      = "b1g4ufr8q7ch7evt7lra"
+  folder_id      = var.folder_id
 }
 
 resource "yandex_compute_disk" "default" {
   name      = "disk-name"
   type      = "network-ssd"
-  zone      = "ru-central1-a"
-  image_id  = "fd83s8u085j3mq231ago"
-  folder_id = "b1g4ufr8q7ch7evt7lra"
+  zone      = var.zone
+  image_id  = var.image_id
+  folder_id = var.folder_id
 
   labels = {
     environment = "test"
@@ -39,14 +37,14 @@ resource "yandex_compute_disk" "default" {
 }
 
 resource "yandex_compute_instance" "default" {
-  name        = "test"
+  name        = var.vm_name
   platform_id = "standard-v1"
-  zone        = "ru-central1-a"
-  folder_id   = "b1g4ufr8q7ch7evt7lra"
+  zone        = var.zone
+  folder_id   = var.folder_id
 
   resources {
-    cores  = 2
-    memory = 4
+    cores  = var.vm_cores
+    memory = var.vm_memory
   }
 
   boot_disk {
@@ -59,6 +57,6 @@ resource "yandex_compute_instance" "default" {
   }
 
   metadata = {
-    ssh-keys = "ubuntu:${file("~/.ssh/id_rsa.pub")}"
+    ssh-keys = "ubuntu:${var.ssh_public_key}"
   }
 }
