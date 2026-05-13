@@ -1,61 +1,45 @@
-variable "yc_token" {
+variable "yc_iam_token" {
   type      = string
   sensitive = true
 }
 
-variable "folder_id" {
+variable "yc_cloud_id" {
   type = string
 }
 
-variable "zone" {
+variable "yc_folder_id" {
+  type = string
+}
+
+variable "yc_zone" {
   type    = string
   default = "ru-central1-a"
 }
 
-variable "image_id" {
-  type = string
-}
-
-variable "vm_name" {
+variable "yc_postgresql_version" {
   type    = string
-  default = "test"
+  default = "15"
 }
 
-variable "vm_cores" {
-  type    = number
-  default = 2
-}
-
-variable "vm_memory" {
-  type    = number
-  default = 2
-}
-
-variable "disk_size" {
-  type    = number
-  default = 10
-}
-
-variable "server_count" {
-  type    = number
-  default = 2
-}
-
-variable "ssh_public_key" {
+variable "db_name" {
   type = string
 }
 
-variable "datadog_api_key" {
+variable "db_user" {
+  type = string
+}
+
+variable "db_password" {
   type      = string
   sensitive = true
 }
 
-variable "datadog_app_key" {
-  type      = string
-  sensitive = true
+variable "ssh_public_key_path" {
+  type    = string
+  default = "~/.ssh/id_rsa.pub"
 }
 
-variable "datadog_site" {
+variable "ssh_private_key_path" {
   type    = string
-  default = "datadoghq.eu"
+  default = "~/.ssh/id_rsa"
 }

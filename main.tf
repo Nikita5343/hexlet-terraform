@@ -1,144 +1,131 @@
-terraform {
-  required_version = ">= 0.13"
+resource "yandex_vpc_network" "net" {
+  name = "tfhexlet"
+}
 
-  required_providers {
-    yandex = {
-      source = "yandex-cloud/yandex"
+resource "yandex_vpc_subnet" "subnet" {
+  name           = "tfhexlet"
+  zone           = var.yc_zone
+  network_id     = yandex_vpc_network.net.id
+  v4_cidr_blocks = ["192.168.192.0/24"]
+}
+
+resource "yandex_mdb_postgresql_cluster" "dbcluster" {
+  name        = "tfhexlet"
+  environment = "PRESTABLE"
+  network_id  = yandex_vpc_network.net.id
+
+  config {
+    version = var.yc_postgresql_version
+
+    resources {
+      resource_preset_id = "s2.micro"
+      disk_type_id       = "network-ssd"
+      disk_size          = 15
     }
 
-    datadog = {
-      source  = "DataDog/datadog"
-      version = "~> 3.50"
+    postgresql_config = {
+      max_connections = 100
     }
   }
-}
 
-provider "yandex" {
-  token = var.yc_token
-  zone  = var.zone
-}
-
-provider "datadog" {
-  api_key = var.datadog_api_key
-  app_key = var.datadog_app_key
-  api_url = "https://api.${var.datadog_site}/"
-}
-
-resource "yandex_vpc_network" "default" {
-  folder_id = var.folder_id
-}
-
-resource "yandex_vpc_subnet" "default" {
-  zone           = var.zone
-  network_id     = yandex_vpc_network.default.id
-  v4_cidr_blocks = ["10.5.0.0/24"]
-  folder_id      = var.folder_id
-}
-
-resource "yandex_compute_disk" "default" {
-  count = var.server_count
-
-  name      = "disk-${count.index + 1}"
-  type      = "network-ssd"
-  zone      = var.zone
-  image_id  = var.image_id
-  size      = var.disk_size
-  folder_id = var.folder_id
-
-  labels = {
-    environment = "test"
+  maintenance_window {
+    type = "WEEKLY"
+    day  = "SAT"
+    hour = 12
   }
+
+  host {
+    zone      = var.yc_zone
+    subnet_id = yandex_vpc_subnet.subnet.id
+  }
+
+  depends_on = [
+    yandex_vpc_network.net,
+    yandex_vpc_subnet.subnet
+  ]
 }
 
-resource "yandex_compute_instance" "default" {
-  count = var.server_count
+resource "yandex_mdb_postgresql_user" "dbuser" {
+  cluster_id = yandex_mdb_postgresql_cluster.dbcluster.id
+  name       = var.db_user
+  password   = var.db_password
 
-  name        = "${var.vm_name}-${count.index + 1}"
-  platform_id = "standard-v1"
-  zone        = var.zone
-  folder_id   = var.folder_id
+  depends_on = [
+    yandex_mdb_postgresql_cluster.dbcluster
+  ]
+}
+
+resource "yandex_mdb_postgresql_database" "db" {
+  cluster_id = yandex_mdb_postgresql_cluster.dbcluster.id
+  name       = var.db_name
+  owner      = yandex_mdb_postgresql_user.dbuser.name
+  lc_collate = "en_US.UTF-8"
+  lc_type    = "en_US.UTF-8"
+
+  depends_on = [
+    yandex_mdb_postgresql_cluster.dbcluster,
+    yandex_mdb_postgresql_user.dbuser
+  ]
+}
+
+data "yandex_compute_image" "ubuntu" {
+  family = "ubuntu-2204-lts"
+}
+
+resource "yandex_compute_instance" "vm" {
+  name = "tfhexlet"
+  zone = var.yc_zone
 
   resources {
-    cores  = var.vm_cores
-    memory = var.vm_memory
+    cores  = 2
+    memory = 2
   }
 
   boot_disk {
-    disk_id = yandex_compute_disk.default[count.index].id
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu.id
+      size     = 10
+    }
   }
 
   network_interface {
-    subnet_id = yandex_vpc_subnet.default.id
+    subnet_id = yandex_vpc_subnet.subnet.id
     nat       = true
   }
 
   metadata = {
-    ssh-keys = "ubuntu:${var.ssh_public_key}"
-
-    user-data = <<-EOF
-      #cloud-config
-      packages:
-        - nginx
-      runcmd:
-        - systemctl enable nginx
-        - systemctl start nginx
-        - echo "Hello from ${var.vm_name}-${count.index + 1}" > /var/www/html/index.html
-        - DD_API_KEY=${var.datadog_api_key} DD_SITE=${var.datadog_site} DD_AGENT_MAJOR_VERSION=7 bash -c "$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)"
-    EOF
-  }
-}
-
-resource "yandex_lb_target_group" "default" {
-  name      = "app-target-group"
-  folder_id = var.folder_id
-
-  dynamic "target" {
-    for_each = yandex_compute_instance.default
-
-    content {
-      subnet_id = yandex_vpc_subnet.default.id
-      address   = target.value.network_interface[0].ip_address
-    }
-  }
-}
-
-resource "yandex_lb_network_load_balancer" "default" {
-  name      = "app-load-balancer"
-  folder_id = var.folder_id
-
-  listener {
-    name        = "http-listener"
-    port        = 80
-    target_port = 80
-
-    external_address_spec {
-      ip_version = "ipv4"
-    }
+    ssh-keys = "ubuntu:${file(var.ssh_public_key_path)}"
   }
 
-  attached_target_group {
-    target_group_id = yandex_lb_target_group.default.id
-
-    healthcheck {
-      name = "http-healthcheck"
-
-      http_options {
-        port = 80
-        path = "/"
-      }
-    }
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    private_key = file(var.ssh_private_key_path)
+    host        = self.network_interface[0].nat_ip_address
   }
-}
 
-resource "datadog_monitor" "cpu_monitor" {
-  name    = "High CPU usage on app servers"
-  type    = "metric alert"
-  message = "CPU usage is too high on app servers"
-
-  query = "avg(last_5m):avg:system.cpu.user{*} > 80"
-
-  monitor_thresholds {
-    warning  = 60
-    critical = 80
+  provisioner "remote-exec" {
+    inline = [
+      <<EOT
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo docker run -d -p 0.0.0.0:80:3000 \
+  -e DB_TYPE=postgres \
+  -e DB_NAME=${var.db_name} \
+  -e DB_HOST=${yandex_mdb_postgresql_cluster.dbcluster.host.0.fqdn} \
+  -e DB_PORT=6432 \
+  -e DB_USER=${var.db_user} \
+  -e DB_PASS=${var.db_password} \
+  ghcr.io/requarks/wiki:2.5
+EOT
+    ]
   }
+
+  depends_on = [
+    yandex_mdb_postgresql_cluster.dbcluster,
+    yandex_mdb_postgresql_user.dbuser,
+    yandex_mdb_postgresql_database.db
+  ]
 }
