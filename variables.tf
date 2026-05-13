@@ -28,9 +28,24 @@ variable "vm_cores" {
 
 variable "vm_memory" {
   type    = number
-  default = 4
+  default = 2
 }
 
 variable "ssh_public_key" {
   type = string
+}
+
+variable "datadog_api_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "datadog_app_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "datadog_site" {
+  type    = string
+  default = "datadoghq.eu"
 }
